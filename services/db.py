@@ -9,13 +9,14 @@ from config import get_settings
 settings = get_settings()
 
 # Use asyncpg for Postgres, aiosqlite for SQLite
-engine = create_async_engine(
-    settings.async_database_url,
-    echo=settings.debug,
-    pool_size=10 if "postgresql" in settings.async_database_url else 1,
-    max_overflow=20 if "postgresql" in settings.async_database_url else 0,
-    pool_pre_ping=True,
-)
+is_postgres = "postgresql" in settings.async_database_url
+
+engine_kwargs = {"echo": settings.debug, "pool_pre_ping": True}
+if is_postgres:
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+
+engine = create_async_engine(settings.async_database_url, **engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
