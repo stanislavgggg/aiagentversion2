@@ -16,7 +16,7 @@ import uuid
 import json
 
 from services.db import get_db, ChatMessage
-from services.ai_service import chat_stream, chat_with_mcp
+from services.ai_service import chat_with_mcp
 from services.logger import get_logger
 
 router = APIRouter()
