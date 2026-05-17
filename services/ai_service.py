@@ -74,19 +74,24 @@ def _friendly_error(error: Exception) -> str:
 def _get_composio_tools():
     """Get Mailchimp tools from Composio via AnthropicProvider."""
     try:
+        logger.info("composio_import_start")
         from composio import Composio
+        logger.info("composio_imported")
         from composio_anthropic import AnthropicProvider
+        logger.info("composio_anthropic_imported")
 
         composio = Composio(
             api_key=settings.composio_api_key,
             provider=AnthropicProvider(),
         )
+        logger.info("composio_client_created")
         session = composio.create(user_id=settings.composio_user_id)
+        logger.info("composio_session_created")
         tools = session.tools(toolkits=["mailchimp"])
         logger.info("composio_tools_loaded", count=len(tools) if tools else 0)
         return composio, session, tools
     except Exception as e:
-        logger.error("composio_tools_error", error=str(e))
+        logger.error("composio_tools_error", error=str(e), error_type=type(e).__name__)
         return None, None, []
 
 
