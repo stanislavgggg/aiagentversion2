@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Float, Integer, DateTime, Text, JSON, Index
+from sqlalchemy import String, Float, Integer, DateTime, Text, JSON
 from datetime import datetime
 from typing import Optional, AsyncGenerator
 
@@ -8,16 +8,13 @@ from config import get_settings
 
 settings = get_settings()
 
-# Use asyncpg for Postgres, aiosqlite for SQLite
 is_postgres = "postgresql" in settings.async_database_url
-
 engine_kwargs = {"echo": settings.debug, "pool_pre_ping": True}
 if is_postgres:
     engine_kwargs["pool_size"] = 10
     engine_kwargs["max_overflow"] = 20
 
 engine = create_async_engine(settings.async_database_url, **engine_kwargs)
-
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -27,6 +24,7 @@ class Base(DeclarativeBase):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), index=True)
@@ -38,6 +36,7 @@ class ChatMessage(Base):
 
 class GeneratedContent(Base):
     __tablename__ = "generated_content"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content_type: Mapped[str] = mapped_column(String(50), index=True)
@@ -51,6 +50,7 @@ class GeneratedContent(Base):
 
 class VoonixRecord(Base):
     __tablename__ = "voonix_records"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tracker_id: Mapped[str] = mapped_column(String(200), index=True)
@@ -63,9 +63,13 @@ class VoonixRecord(Base):
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+
 async def init_db():
+    """Create tables if they don't exist. Safe to call on every startup."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(sync_conn, checkfirst=True)
+        )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
