@@ -65,15 +65,12 @@ Reference actual campaign names and numbers from Mailchimp data.
 
 
 def _get_mcp_servers() -> list[dict]:
-    """Correct Composio MCP config per their documentation."""
     return [
         {
             "type": "url",
             "url": "https://connect.composio.dev/mcp",
             "name": "composio",
-            "headers": {
-                "x-consumer-api-key": settings.composio_api_key,
-            },
+            "authorization_token": settings.composio_api_key,
         }
     ]
 
