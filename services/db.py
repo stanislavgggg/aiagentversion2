@@ -63,10 +63,9 @@ class VoonixRecord(Base):
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-
 async def init_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
