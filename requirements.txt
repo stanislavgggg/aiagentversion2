@@ -1,2 +1,16 @@
+beautifulsoup4>=4.12.0
+openai>=1.30.0
+pandas>=2.0.0
+google-cloud-bigquery==3.25.0
+google-auth==2.35.0
+requests==2.32.3
+qdrant-client==1.11.3
+pyarrow>=15.0.0
+db-dtypes>=1.2.0
+plotly
+openpyxl
+langdetect
+dateparser
 fastapi>=0.111.0
-uvicorn
+uvicorn>=0.29.0
+redis>=5.0.0
