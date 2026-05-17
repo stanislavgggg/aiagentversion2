@@ -1,8 +1,8 @@
 """
-AI Service using Composio + Anthropic the RIGHT way.
-- Composio provides tools via session.tools()
-- Claude uses function calling (agentic loop)
-- No MCP servers needed
+AI Service — Claude with Composio MCP.
+Correct setup per Composio docs:
+- URL: https://connect.composio.dev/mcp
+- Header: x-consumer-api-key: YOUR_KEY
 """
 import anthropic
 import json
@@ -35,9 +35,9 @@ USER_FRIENDLY_ERRORS = {
 
 SYSTEM_PROMPT = """You are an expert email marketing AI assistant for an iGaming affiliate company.
 
-You have access to tools to fetch LIVE data from Mailchimp.
-ALWAYS use your tools to fetch real campaign data before answering questions.
-Never guess or make up campaign data.
+You have LIVE access to the company's Mailchimp account via tools.
+ALWAYS use your Mailchimp tools to fetch real data before answering questions about campaigns.
+Never guess or make up campaign data — always fetch it first.
 
 Company context:
 - GEOs: Spain (ES), Croatia (HR), Serbia (RS), Lithuania (LT), Latvia (LV)
@@ -45,7 +45,7 @@ Company context:
 - Goal: maximize FTDs (first-time deposits) and revenue, not just open rates
 
 When analyzing campaigns:
-1. Use tools to fetch real data from Mailchimp
+1. Fetch real data via Mailchimp tools
 2. Find patterns: subject lines, open rates, CTR, GEO, audience, send time
 3. Give specific data-backed insights with actual numbers
 
@@ -55,14 +55,32 @@ When generating content:
 3. Write in the correct language for the GEO
 4. Use urgency, exclusivity, sports/casino hooks that worked before
 
+IMPORTANT: You do NOT have access to FTD or revenue data unless the user has imported Voonix data.
+Never invent or estimate conversion numbers. If asked about FTDs or revenue, say this data
+is not yet available and suggest importing Voonix data via the Voonix Import section.
+
 Always respond in the same language the user writes in (Russian or English).
-Reference actual campaign names and numbers when possible.
+Reference actual campaign names and numbers from Mailchimp data.
 """
+
+
+def _get_mcp_servers() -> list[dict]:
+    """Correct Composio MCP config per their documentation."""
+    return [
+        {
+            "type": "url",
+            "url": "https://connect.composio.dev/mcp",
+            "name": "composio",
+            "headers": {
+                "x-consumer-api-key": settings.composio_api_key,
+            },
+        }
+    ]
 
 
 def _friendly_error(error: Exception) -> str:
     msg = str(error).lower()
-    if "authentication" in msg or "authorization" in msg or "token" in msg:
+    if "authentication" in msg or "authorization" in msg or "401" in msg:
         return USER_FRIENDLY_ERRORS["authentication"]
     if "rate" in msg and "limit" in msg:
         return USER_FRIENDLY_ERRORS["rate_limit"]
@@ -71,110 +89,34 @@ def _friendly_error(error: Exception) -> str:
     return USER_FRIENDLY_ERRORS["default"]
 
 
-def _get_composio_tools():
-    """Get Mailchimp tools from Composio via AnthropicProvider."""
-    try:
-        logger.info("composio_import_start")
-        from composio import Composio
-        logger.info("composio_imported")
-        from composio_anthropic import AnthropicProvider
-        logger.info("composio_anthropic_imported")
-
-        composio = Composio(
-            api_key=settings.composio_api_key,
-            provider=AnthropicProvider(),
-        )
-        logger.info("composio_client_created")
-        session = composio.create(user_id=settings.composio_user_id)
-        logger.info("composio_session_created")
-        tools = session.tools(toolkits=["mailchimp"])
-        logger.info("composio_tools_loaded", count=len(tools) if tools else 0)
-        return composio, session, tools
-    except Exception as e:
-        logger.error("composio_tools_error", error=str(e), error_type=type(e).__name__)
-        return None, None, []
-
-
-async def _agentic_loop(
-    messages: list[dict],
-    system: str,
-    tools: list,
-    composio,
-    user_id: str,
-) -> str:
-    """Run Claude agentic loop with tool calling."""
-    import asyncio
-
-    current_messages = messages.copy()
-
-    for iteration in range(10):  # Max 10 tool call rounds
-        response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=system,
-            tools=tools if tools else [],
-            messages=current_messages,
-        )
-
-        if response.stop_reason == "end_turn":
-            # Final text response
-            text_parts = [b.text for b in response.content if hasattr(b, "text")]
-            return "\n".join(text_parts)
-
-        if response.stop_reason == "tool_use" and composio:
-            # Handle tool calls via Composio
-            tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
-
-            # Execute tools via Composio (sync call in thread)
-            results = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: composio.provider.handle_tool_calls(
-                    user_id=user_id, response=response
-                ),
-            )
-
-            current_messages.append({"role": "assistant", "content": response.content})
-            current_messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_blocks[i].id,
-                        "content": json.dumps(result),
-                    }
-                    for i, result in enumerate(results)
-                ],
-            })
-            logger.info("tool_calls_executed", iteration=iteration, count=len(results))
-        else:
-            # No more tool calls
-            text_parts = [b.text for b in response.content if hasattr(b, "text")]
-            return "\n".join(text_parts)
-
-    return "Max iterations reached. Please try a more specific question."
-
-
 async def chat_with_mcp(
     messages: list[dict],
     geo: Optional[str] = None,
 ) -> str:
-    """Chat with Claude using Composio tools for Mailchimp access."""
+    """Chat with Claude using Composio MCP for live Mailchimp access."""
     system = SYSTEM_PROMPT
     if geo:
-        system += f"\n\nFocus on GEO: {geo} ({GEO_LANGUAGES.get(geo, geo)})."
+        system += f"\n\nFocus analysis on GEO: {geo} ({GEO_LANGUAGES.get(geo, geo)})."
 
-    composio, session, tools = _get_composio_tools()
+    logger.info("chat_start", geo=geo, messages=len(messages))
 
     try:
-        return await _agentic_loop(
-            messages=messages,
+        response = await client.beta.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
             system=system,
-            tools=tools,
-            composio=composio,
-            user_id=settings.composio_user_id,
+            messages=messages,
+            mcp_servers=_get_mcp_servers(),
+            betas=["mcp-client-2025-04-04"],
         )
+
+        text_parts = [block.text for block in response.content if hasattr(block, "text")]
+        result = "\n".join(text_parts) if text_parts else "No response generated."
+        logger.info("chat_complete", geo=geo)
+        return result
+
     except anthropic.APIStatusError as e:
-        logger.error("chat_api_error", error=str(e))
+        logger.error("chat_api_error", status=e.status_code, error=str(e))
         raise Exception(_friendly_error(e))
     except Exception as e:
         logger.error("chat_error", error=str(e))
@@ -189,16 +131,16 @@ async def generate_content(
     db: AsyncSession,
     extra: str = "",
 ) -> dict:
-    """Generate email content using real Mailchimp data via Composio."""
+    """Generate email content using live Mailchimp data via Composio MCP."""
     language = GEO_LANGUAGES.get(geo, "English")
 
     prompts = {
         "newsletter": f"""
 Use your Mailchimp tools to fetch top 10 campaigns by open rate and CTR for {geo} {audience_type} audience.
 
-Then generate a complete newsletter based on what actually worked:
+Generate a complete newsletter based on what actually worked:
 - GEO: {geo} ({language}), Audience: {audience_type}, Offer: {offer}
-{f'- Extra: {extra}' if extra else ''}
+{f'- Extra context: {extra}' if extra else ''}
 
 Return ONLY valid JSON (no markdown fences):
 {{
@@ -212,10 +154,13 @@ Return ONLY valid JSON (no markdown fences):
 """,
         "subject_lines": f"""
 Fetch best performing campaigns for {geo} {audience_type} from Mailchimp.
-Generate 5 subject lines for: {offer} in {language}.
+Look at what subject lines got the highest open rates.
+
+Generate 5 new subject lines for offer: {offer}
+Language: {language}
 
 Return ONLY valid JSON (no markdown fences):
-[{{"subject": "...", "style": "urgency|curiosity|offer|emoji", "reasoning": "why based on our data"}}]
+[{{"subject": "...", "style": "urgency|curiosity|offer|emoji|personalization", "reasoning": "why based on our data"}}]
 """,
         "ab_test": f"""
 Fetch campaign data for {geo} {audience_type} from Mailchimp.
@@ -242,16 +187,19 @@ Return ONLY valid JSON (no markdown fences):
 """,
     }
 
-    composio, session, tools = _get_composio_tools()
+    logger.info("generate_start", content_type=content_type, geo=geo)
 
     try:
-        raw = await _agentic_loop(
-            messages=[{"role": "user", "content": prompts.get(content_type, prompts["newsletter"])}],
+        response = await client.beta.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=3000,
             system=SYSTEM_PROMPT,
-            tools=tools,
-            composio=composio,
-            user_id=settings.composio_user_id,
+            messages=[{"role": "user", "content": prompts.get(content_type, prompts["newsletter"])}],
+            mcp_servers=_get_mcp_servers(),
+            betas=["mcp-client-2025-04-04"],
         )
+
+        raw = "\n".join(block.text for block in response.content if hasattr(block, "text"))
 
         try:
             clean = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
