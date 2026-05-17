@@ -69,9 +69,8 @@ def _get_mcp_servers() -> list[dict]:
     return [
         {
             "type": "url",
-            "url": settings.composio_mcp_url,
+            "url": f"https://mcp.composio.dev/mailchimp?apiKey={settings.composio_api_key}",
             "name": "mailchimp",
-            "authorization_token": settings.composio_api_key,
         }
     ]
 
