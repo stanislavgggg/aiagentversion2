@@ -83,15 +83,15 @@ async def clear_session(session_id: str, db: AsyncSession = Depends(get_db)):
 async def example_questions():
     return {
         "examples": [
-            "Покажи все кампании за 2024 год с open rate выше 35%",
-            "Что лучше всего работало в Испании для казино аудитории?",
-            "Какие subject lines дали лучший open rate в Латвии?",
-            "Напиши новое письмо для Sportsbook аудитории в Хорватии",
-            "Сравни результаты Casino vs Sportsbook по всем GEO",
-            "Сгенерируй 3 новых угла для newsletter на основе лучших кампаний",
-            "В какие дни недели наши кампании показывают лучшие результаты?",
-            "Предложи A/B тест для следующей кампании в Литве",
-            "Какой стиль subject line работает лучше — с emoji или без?",
-            "Напиши 5 вариантов subject line для welcome bonus кампании в Сербии",
+            "Show all 2024 campaigns with open rate above 35%",
+            "What worked best in Spain for casino audience?",
+            "Best subject lines by open rate in Latvia",
+            "Write a new email for Sportsbook audience in Croatia",
+            "Compare Casino vs Sportsbook results across all GEOs",
+            "Generate 3 new newsletter angles based on top campaigns",
+            "What days of the week show best results?",
+            "Suggest an A/B test for next campaign in Lithuania",
+            "Which subject line style works better — with emoji or without?",
+            "Write 5 subject line options for welcome bonus campaign in Serbia",
         ]
     }
