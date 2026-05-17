@@ -1,19 +1,17 @@
 """
-AI Chat router with streaming.
-POST /api/chat          → streaming SSE response
-POST /api/chat/sync     → non-streaming (fallback)
+AI Chat router.
+POST /api/chat          → main chat endpoint
+POST /api/chat/stream   → alias for chat (no real streaming with function calling)
 GET  /api/chat/history/{session_id}
 DELETE /api/chat/{session_id}
 GET  /api/chat/examples
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc, delete
 from pydantic import BaseModel
 from typing import Optional
 import uuid
-import json
 
 from services.db import get_db, ChatMessage
 from services.ai_service import chat_with_mcp
@@ -49,55 +47,7 @@ async def _save_message(session_id: str, role: str, content: str, geo: Optional[
     await db.commit()
 
 
-@router.post("/stream")
-async def stream_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """
-    Streaming endpoint — returns Server-Sent Events.
-    Frontend reads chunks as they arrive (no waiting for full response).
-    """
-    session_id = req.session_id or str(uuid.uuid4())
-
-    history = await _load_history(session_id, db)
-    messages = history + [{"role": "user", "content": req.message}]
-
-    await _save_message(session_id, "user", req.message, req.geo, db)
-
-    # Collect full reply for saving to DB
-    full_reply = []
-
-    async def event_generator():
-        # First send session_id so frontend knows it
-        yield f"data: {json.dumps({'session_id': session_id})}\n\n"
-
-        async for chunk in chat_stream(messages=messages, geo=req.geo):
-            # Parse chunk to collect full reply
-            try:
-                data = json.loads(chunk.replace("data: ", "").strip())
-                if "text" in data:
-                    full_reply.append(data["text"])
-            except Exception:
-                pass
-            yield chunk
-
-        # Save complete reply to DB
-        if full_reply:
-            complete = "".join(full_reply)
-            await _save_message(session_id, "assistant", complete, req.geo, db)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
-
-
-@router.post("", response_model=ChatResponse)
-async def chat_sync(req: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """Non-streaming fallback — returns full response at once."""
+async def _handle_chat(req: ChatRequest, db: AsyncSession) -> ChatResponse:
     session_id = req.session_id or str(uuid.uuid4())
 
     history = await _load_history(session_id, db)
@@ -112,6 +62,17 @@ async def chat_sync(req: ChatRequest, db: AsyncSession = Depends(get_db)):
 
     await _save_message(session_id, "assistant", reply, req.geo, db)
     return ChatResponse(reply=reply, session_id=session_id)
+
+
+@router.post("", response_model=ChatResponse)
+async def chat_sync(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+    return await _handle_chat(req, db)
+
+
+@router.post("/stream", response_model=ChatResponse)
+async def chat_stream_endpoint(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+    """Same as /api/chat — streaming replaced by function calling agentic loop."""
+    return await _handle_chat(req, db)
 
 
 @router.get("/history/{session_id}")
