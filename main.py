@@ -21,13 +21,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене: твой Lovable домен
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Только 3 роутера — всё остальное делает Claude через MCP
 app.include_router(ai_chat.router, prefix="/api/chat", tags=["AI Chat"])
 app.include_router(generate.router, prefix="/api/generate", tags=["Generate"])
 app.include_router(voonix.router, prefix="/api/voonix", tags=["Voonix"])
